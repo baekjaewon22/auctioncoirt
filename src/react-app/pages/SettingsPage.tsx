@@ -68,10 +68,11 @@ export default function SettingsPage() {
 		<div className="mx-auto max-w-3xl px-4 py-6">
 			<h2 className="text-xl font-bold text-gray-900 mb-6">설정</h2>
 
-			{/* 마이옥션 계정 */}
+			{/* 마이옥션 계정 + 크롤링 */}
 			<Section title="마이옥션 계정" desc="관심물건 크롤링에 사용됩니다">
 				<InputRow label="아이디" value={settings.myauction_id} onChange={(v) => set("myauction_id", v)} placeholder="마이옥션 아이디" />
 				<InputRow label="비밀번호" value={settings.myauction_pw} onChange={(v) => set("myauction_pw", v)} placeholder="마이옥션 비밀번호" type="password" />
+				<CrawlButton myauctionId={settings.myauction_id} myauctionPw={settings.myauction_pw} />
 			</Section>
 
 			{/* AI 설정 */}
@@ -159,6 +160,76 @@ function PasswordChangeSection() {
 				className="bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors">
 				비밀번호 변경
 			</button>
+		</div>
+	);
+}
+
+function CrawlButton({ myauctionId, myauctionPw }: { myauctionId: string; myauctionPw: string }) {
+	const { user } = useAuth();
+	const [crawling, setCrawling] = useState(false);
+	const [result, setResult] = useState<{ count: number; items: { case_no: string; item_type: string; address: string }[] } | null>(null);
+	const [error, setError] = useState("");
+
+	const handleCrawl = async () => {
+		if (!myauctionId || !myauctionPw) {
+			setError("마이옥션 아이디/비밀번호를 먼저 입력하고 설정을 저장해주세요");
+			return;
+		}
+		setCrawling(true);
+		setError("");
+		setResult(null);
+
+		try {
+			const res = await fetch("http://localhost:8787/api/crawl", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					myauction_id: myauctionId,
+					myauction_pw: myauctionPw,
+					user_id: user?.id ?? 0,
+				}),
+			});
+			const data = await res.json() as { data?: { count: number; items: { case_no: string; item_type: string; address: string }[] }; error?: string };
+			if (data.error) {
+				setError(data.error);
+			} else if (data.data) {
+				setResult(data.data);
+			}
+		} catch {
+			setError("크롤링 서버에 연결할 수 없습니다. 터미널에서 'python crawler/server.py' 를 실행해주세요.");
+		}
+		setCrawling(false);
+	};
+
+	return (
+		<div className="mt-4 pt-4 border-t">
+			<div className="flex items-center gap-3">
+				<button onClick={handleCrawl} disabled={crawling}
+					className="bg-orange-500 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-orange-600 disabled:opacity-50 transition-colors flex items-center gap-2">
+					{crawling ? (
+						<>
+							<svg className="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+							크롤링 중...
+						</>
+					) : "마이옥션 관심물건 가져오기"}
+				</button>
+				{crawling && <span className="text-xs text-gray-400">물건 수에 따라 1~3분 소요됩니다</span>}
+			</div>
+
+			{error && <p className="text-xs text-red-600 bg-red-50 p-2 rounded mt-3">{error}</p>}
+
+			{result && (
+				<div className="mt-3 bg-green-50 rounded p-3">
+					<p className="text-sm font-medium text-green-800 mb-2">{result.count}건 가져오기 완료!</p>
+					<div className="space-y-1">
+						{result.items.map((item, i) => (
+							<p key={i} className="text-xs text-green-700">
+								<span className="font-medium">[{item.item_type}]</span> {item.case_no} - {item.address.substring(0, 40)}
+							</p>
+						))}
+					</div>
+				</div>
+			)}
 		</div>
 	);
 }
