@@ -1,11 +1,18 @@
-"""경매 물건 상세 페이지 파싱"""
-from bs4 import BeautifulSoup
+"""경매 물건 상세 페이지 파싱 (WebSquare API 응답)"""
+from utils.logger import setup_logger
+
+logger = setup_logger("detail_parser")
 
 
-def parse_item_detail(html: str) -> dict:
-    """상세 페이지 HTML에서 물건 상세정보 추출"""
-    soup = BeautifulSoup(html, "lxml")
+def parse_item_detail(data: dict) -> dict:
+    """상세 페이지 API 응답에서 물건 상세정보 추출
 
+    Args:
+        data: 상세 API 응답 JSON
+
+    Returns:
+        상세 정보 dict
+    """
     detail = {
         "building_area": None,
         "land_area": None,
@@ -18,68 +25,101 @@ def parse_item_detail(html: str) -> dict:
         "spec_pdf_url": None,
     }
 
-    # 건물/토지 내역 파싱
-    building_table = soup.select_one("table.Ltbl_dt")
-    if building_table:
-        rows = building_table.select("tr")
-        for row in rows:
-            th = row.select_one("th")
-            td = row.select_one("td")
-            if not th or not td:
-                continue
-            label = th.get_text(strip=True)
-            value = td.get_text(strip=True)
+    # 건물/토지 내역
+    building_info = data.get("dlt_bldgInfo", [])
+    if isinstance(building_info, dict):
+        building_info = building_info.get("rows", [])
 
-            if "건물면적" in label:
-                detail["building_area"] = _parse_area(value)
-            elif "토지면적" in label:
-                detail["land_area"] = _parse_area(value)
-            elif "층" in label:
-                detail["floor_info"] = value
+    for bldg in building_info:
+        area = _safe_float(bldg.get("bldgAr"))
+        if area:
+            detail["building_area"] = (detail["building_area"] or 0) + area
+        detail["floor_info"] = bldg.get("flrInfo", detail["floor_info"])
+
+    land_info = data.get("dlt_landInfo", [])
+    if isinstance(land_info, dict):
+        land_info = land_info.get("rows", [])
+
+    for land in land_info:
+        area = _safe_float(land.get("landAr"))
+        if area:
+            detail["land_area"] = (detail["land_area"] or 0) + area
 
     # 임차인 현황
-    tenant_table = soup.select("table.Ltbl_list")
-    for table in tenant_table:
-        caption = table.select_one("caption")
-        if caption and "임차인" in caption.get_text():
-            for row in table.select("tbody tr"):
-                cols = row.select("td")
-                if len(cols) >= 3:
-                    detail["tenants"].append({
-                        "tenant_type": cols[0].get_text(strip=True),
-                        "deposit": _parse_price(cols[1].get_text(strip=True)),
-                        "move_in_date": cols[2].get_text(strip=True),
-                    })
+    tenant_list = data.get("dlt_tenantInfo", [])
+    if isinstance(tenant_list, dict):
+        tenant_list = tenant_list.get("rows", [])
 
-    # PDF 링크
-    for link in soup.select("a[href]"):
-        href = link.get("href", "")
-        text = link.get_text(strip=True)
-        if isinstance(href, list):
-            href = href[0]
-        if "감정" in text:
-            detail["appraisal_pdf_url"] = href
-        elif "현황조사" in text:
-            detail["survey_pdf_url"] = href
-        elif "매각물건명세" in text:
-            detail["spec_pdf_url"] = href
+    for tenant in tenant_list:
+        detail["tenants"].append({
+            "tenant_type": tenant.get("rltnPrsnDvs", ""),
+            "deposit": _safe_int(tenant.get("bndAmt")),
+            "move_in_date": _format_date(tenant.get("mvnDt", "")),
+            "is_priority": tenant.get("oppsblYn", "") == "Y",
+        })
 
+    # 매각기일 히스토리
+    history_list = data.get("dlt_saleHistory", [])
+    if isinstance(history_list, dict):
+        history_list = history_list.get("rows", [])
+
+    for hist in history_list:
+        detail["sale_history"].append({
+            "sale_date": _format_date(hist.get("dspslDxdyYmd", "")),
+            "min_bid_price": _safe_int(hist.get("lwsDspslPrc")),
+            "result": hist.get("dspslRslt", ""),
+            "winning_price": _safe_int(hist.get("scsfBdAmt")),
+            "bidder_count": _safe_int(hist.get("bidCnt")),
+        })
+
+    # PDF 문서 링크
+    doc_list = data.get("dlt_docInfo", [])
+    if isinstance(doc_list, dict):
+        doc_list = doc_list.get("rows", [])
+
+    for doc in doc_list:
+        doc_type = doc.get("docDvs", "")
+        doc_url = doc.get("docUrl", "")
+        if not doc_url:
+            continue
+
+        if "감정" in doc_type:
+            detail["appraisal_pdf_url"] = doc_url
+        elif "현황조사" in doc_type:
+            detail["survey_pdf_url"] = doc_url
+        elif "매각물건명세" in doc_type:
+            detail["spec_pdf_url"] = doc_url
+
+    logger.info(
+        f"상세 파싱 완료: 임차인 {len(detail['tenants'])}명, "
+        f"히스토리 {len(detail['sale_history'])}건"
+    )
     return detail
 
 
-def _parse_area(text: str) -> float | None:
-    """면적 문자열을 float으로 변환"""
-    cleaned = text.replace("㎡", "").replace(",", "").strip()
+def _format_date(date_str: str) -> str:
+    """날짜 형식 변환 (20260319 → 2026-03-19)"""
+    date_str = str(date_str).strip()
+    if len(date_str) == 8 and date_str.isdigit():
+        return f"{date_str[:4]}-{date_str[4:6]}-{date_str[6:]}"
+    return date_str
+
+
+def _safe_int(value) -> int | None:
+    if value is None:
+        return None
     try:
-        return float(cleaned)
-    except ValueError:
+        cleaned = str(value).replace(",", "").replace("원", "").strip()
+        return int(cleaned) if cleaned else None
+    except (ValueError, TypeError):
         return None
 
 
-def _parse_price(text: str) -> int | None:
-    """가격 문자열을 정수로 변환"""
-    cleaned = text.replace(",", "").replace("원", "").strip()
+def _safe_float(value) -> float | None:
+    if value is None:
+        return None
     try:
-        return int(cleaned)
-    except ValueError:
+        cleaned = str(value).replace("㎡", "").replace(",", "").strip()
+        return float(cleaned) if cleaned else None
+    except (ValueError, TypeError):
         return None

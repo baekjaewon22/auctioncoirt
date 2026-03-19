@@ -5,6 +5,7 @@ import HomePage from "./pages/HomePage";
 import SearchPage from "./pages/SearchPage";
 import ItemDetailPage from "./pages/ItemDetailPage";
 import StatsPage from "./pages/StatsPage";
+import MapPage from "./pages/MapPage";
 import "./App.css";
 
 const queryClient = new QueryClient({
@@ -25,6 +26,7 @@ function App() {
 						<Route path="/" element={<HomePage />} />
 						<Route path="/search" element={<SearchPage />} />
 						<Route path="/items/:caseNo" element={<ItemDetailPage />} />
+						<Route path="/map" element={<MapPage />} />
 						<Route path="/stats" element={<StatsPage />} />
 					</Route>
 				</Routes>
