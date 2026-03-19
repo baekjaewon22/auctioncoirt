@@ -125,6 +125,25 @@ def crawl_detail(page, item_url: str, item_id: str) -> dict:
                     info[label] = value
                 i += 2
 
+    # ===== 2-1. 헤더에서 법원명 + 실제 사건번호 추출 =====
+    # 페이지 상단: "서울동부 경매7계 2023 타경 60534 [아파트]"
+    header_m = re.search(
+        r"([가-힣]+(?:지방법원|지원|본원)?)\s*(?:경매\d+계)?\s*(\d{4})\s*타경\s*(\d+)",
+        text[:300],
+    )
+    if header_m:
+        detail["법원명"] = header_m.group(1).strip()
+        detail["사건번호"] = f"{header_m.group(2)}타경{header_m.group(3)}"
+        detail["담당계"] = ""
+        # 담당계 추출
+        dept_m = re.search(r"(경매\d+계)", text[:300])
+        if dept_m:
+            detail["담당계"] = dept_m.group(1)
+    else:
+        detail["법원명"] = ""
+        detail["사건번호"] = item_id  # fallback
+        detail["담당계"] = ""
+
     detail["소재지"] = info.get("소재지", "")
     detail["경매종류"] = info.get("경매종류", "")
     detail["물건종류"] = info.get("물건종류", "")
@@ -293,7 +312,7 @@ def main():
                     detail["local_images"] = local_images
 
                 all_items.append(detail)
-                time.sleep(2)  # 부하 방지
+                time.sleep(5 + len(all_items))  # WAF 방지: 점점 길어지는 딜레이
             except Exception as e:
                 print(f"  [오류] {e}")
 
