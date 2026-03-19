@@ -204,3 +204,4 @@ crawler/__pycache__/
 crawler/**/__pycache__/
 crawler/*.log
 crawler/.venv/
+crawler/output/
