@@ -1,6 +1,6 @@
 {
-	"name": "auctioncoirt",
-	"description": "A template for building a React application with Vite, Hono, and Cloudflare Workers",
+	"name": "auctioncourt",
+	"description": "법원경매 정보 사이트 - Court Auction Information Service",
 	"cloudflare": {
 		"label": "Vite React Template",
 		"products": [
@@ -12,13 +12,19 @@
 		"publish": true
 	},
 	"dependencies": {
+		"@tanstack/react-query": "^5.91.0",
 		"hono": "4.11.1",
 		"react": "19.2.1",
-		"react-dom": "19.2.1"
+		"react-dom": "19.2.1",
+		"react-router-dom": "^7.13.1",
+		"zustand": "^5.0.12"
 	},
 	"devDependencies": {
 		"@cloudflare/vite-plugin": "1.15.3",
 		"@eslint/js": "9.39.1",
+		"@tailwindcss/vite": "^4.2.2",
+		"@testing-library/jest-dom": "^6.9.1",
+		"@testing-library/react": "^16.3.2",
 		"@types/node": "24.10.1",
 		"@types/react": "19.2.7",
 		"@types/react-dom": "19.2.3",
@@ -27,9 +33,12 @@
 		"eslint-plugin-react-hooks": "7.0.1",
 		"eslint-plugin-react-refresh": "0.4.24",
 		"globals": "16.5.0",
+		"jsdom": "^29.0.0",
+		"tailwindcss": "^4.2.2",
 		"typescript": "5.8.3",
 		"typescript-eslint": "8.48.0",
 		"vite": "^6.0.0",
+		"vitest": "^4.1.0",
 		"wrangler": "4.56.0"
 	},
 	"private": true,
@@ -40,7 +49,9 @@
 		"deploy": "wrangler deploy",
 		"dev": "vite",
 		"lint": "eslint .",
-		"preview": "npm run build && vite preview"
+		"preview": "npm run build && vite preview",
+		"test": "vitest run",
+		"test:watch": "vitest"
 	},
 	"type": "module"
 }
