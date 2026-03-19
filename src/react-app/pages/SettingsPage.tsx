@@ -116,6 +116,49 @@ export default function SettingsPage() {
 				</button>
 				{msg && <span className="text-sm text-green-600">{msg}</span>}
 			</div>
+
+			{/* 비밀번호 변경 */}
+			<PasswordChangeSection />
+		</div>
+	);
+}
+
+function PasswordChangeSection() {
+	const [currentPw, setCurrentPw] = useState("");
+	const [newPw, setNewPw] = useState("");
+	const [confirmPw, setConfirmPw] = useState("");
+	const [pwMsg, setPwMsg] = useState("");
+	const [pwError, setPwError] = useState("");
+
+	const handleChangePw = async () => {
+		setPwMsg("");
+		setPwError("");
+		if (newPw !== confirmPw) { setPwError("새 비밀번호가 일치하지 않습니다"); return; }
+		if (newPw.length < 4) { setPwError("비밀번호는 4자 이상이어야 합니다"); return; }
+
+		const res = await fetch("/api/auth/change-password", {
+			method: "POST",
+			headers: { ...authHeaders(), "Content-Type": "application/json" },
+			body: JSON.stringify({ currentPassword: currentPw, newPassword: newPw }),
+		});
+		const data = await res.json() as { data?: { message: string }; error?: string };
+		if (data.error) { setPwError(data.error); }
+		else { setPwMsg(data.data?.message || "변경 완료"); setCurrentPw(""); setNewPw(""); setConfirmPw(""); }
+	};
+
+	return (
+		<div className="bg-white rounded-lg shadow-sm p-5 mt-6">
+			<h3 className="text-sm font-bold text-gray-800 mb-0.5">비밀번호 변경</h3>
+			<p className="text-xs text-gray-400 mb-4">현재 비밀번호를 입력해야 변경할 수 있습니다</p>
+			<InputRow label="현재 비밀번호" value={currentPw} onChange={setCurrentPw} type="password" placeholder="현재 비밀번호" />
+			<InputRow label="새 비밀번호" value={newPw} onChange={setNewPw} type="password" placeholder="새 비밀번호 (4자 이상)" />
+			<InputRow label="비밀번호 확인" value={confirmPw} onChange={setConfirmPw} type="password" placeholder="새 비밀번호 확인" />
+			{pwError && <p className="text-xs text-red-600 bg-red-50 p-2 rounded mb-3">{pwError}</p>}
+			{pwMsg && <p className="text-xs text-green-600 bg-green-50 p-2 rounded mb-3">{pwMsg}</p>}
+			<button onClick={handleChangePw}
+				className="bg-gray-700 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-800 transition-colors">
+				비밀번호 변경
+			</button>
 		</div>
 	);
 }

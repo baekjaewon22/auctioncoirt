@@ -12,9 +12,24 @@ export default function Layout() {
 		{ to: "/search", label: "물건검색" },
 		{ to: "/blog", label: "블로그 자동화", auth: true },
 		{ to: "/settings", label: "설정", auth: true },
+		{ to: "/admin", label: "관리자", admin: true },
 	];
 
-	const visibleLinks = navLinks.filter((l) => !l.auth || user);
+	// admin 링크는 localStorage 토큰에서 role 확인
+	const isAdmin = (() => {
+		try {
+			const token = localStorage.getItem("auth_token");
+			if (!token) return false;
+			const payload = JSON.parse(atob(token));
+			return payload.role === "admin";
+		} catch { return false; }
+	})();
+
+	const visibleLinks = navLinks.filter((l) => {
+		if ((l as { admin?: boolean }).admin) return isAdmin;
+		if (l.auth) return !!user;
+		return true;
+	});
 
 	const isActive = (path: string) =>
 		location.pathname === path

@@ -11,6 +11,7 @@ import MapPage from "./pages/MapPage";
 import LoginPage from "./pages/LoginPage";
 import SettingsPage from "./pages/SettingsPage";
 import BlogPage from "./pages/BlogPage";
+import AdminPage from "./pages/AdminPage";
 import "./App.css";
 
 const queryClient = new QueryClient({
@@ -43,6 +44,7 @@ function App() {
 							<Route path="/login" element={<LoginPage />} />
 							<Route path="/settings" element={<SettingsPage />} />
 							<Route path="/blog" element={<BlogPage />} />
+							<Route path="/admin" element={<AdminPage />} />
 						</Route>
 					</Routes>
 				</AppInit>

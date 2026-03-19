@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 interface AuthState {
-	user: { id: number; email: string; name: string } | null;
+	user: { id: number; email: string; name: string; role?: string } | null;
 	token: string | null;
 	login: (email: string, password: string) => Promise<boolean>;
 	register: (email: string, password: string, name: string) => Promise<string | null>;
