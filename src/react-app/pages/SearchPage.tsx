@@ -1,31 +1,18 @@
 import { useQuery } from "@tanstack/react-query";
 import { useSearchParams, Link } from "react-router-dom";
-import { api } from "../lib/api";
-
-const PRICE_OPTIONS = [
-	{ label: "전체", value: "" },
-	{ label: "1천만 이하", value: "10000000" },
-	{ label: "5천만 이하", value: "50000000" },
-	{ label: "1억 이하", value: "100000000" },
-	{ label: "3억 이하", value: "300000000" },
-	{ label: "5억 이하", value: "500000000" },
-	{ label: "10억 이하", value: "1000000000" },
-];
+import { api, formatPrice } from "../lib/api";
 
 export default function SearchPage() {
 	const [searchParams, setSearchParams] = useSearchParams();
 
 	const filters = {
 		sido: searchParams.get("sido") ?? undefined,
-		sigu: searchParams.get("sigu") ?? undefined,
 		type: searchParams.get("type") ?? undefined,
 		status: searchParams.get("status") ?? undefined,
-		priceMax: searchParams.get("priceMax") ?? undefined,
-		failCount: searchParams.get("failCount") ?? undefined,
-		page: searchParams.get("page") ?? "1",
-		limit: searchParams.get("limit") ?? "20",
 		sort: searchParams.get("sort") ?? "sale_date",
 		order: searchParams.get("order") ?? "asc",
+		page: searchParams.get("page") ?? "1",
+		limit: "20",
 	};
 
 	const { data, isLoading } = useQuery({
@@ -35,278 +22,197 @@ export default function SearchPage() {
 
 	const setFilter = (key: string, value: string) => {
 		const params = new URLSearchParams(searchParams);
-		if (value) {
-			params.set(key, value);
-		} else {
-			params.delete(key);
-		}
+		if (value) params.set(key, value);
+		else params.delete(key);
 		params.set("page", "1");
 		setSearchParams(params);
 	};
 
-	const setPage = (page: number) => {
-		const params = new URLSearchParams(searchParams);
-		params.set("page", String(page));
-		setSearchParams(params);
-	};
-
-	const resetFilters = () => {
-		setSearchParams({});
-	};
-
-	const formatPrice = (price?: number) => {
-		if (!price) return "-";
-		if (price >= 100000000) return `${(price / 100000000).toFixed(1)}억`;
-		if (price >= 10000) return `${(price / 10000).toFixed(0)}만`;
-		return price.toLocaleString();
-	};
-
-	const currentPage = Number(filters.page) || 1;
-
 	return (
-		<div className="mx-auto max-w-7xl px-4 py-6">
-			<div className="flex items-center justify-between mb-4">
-				<h2 className="text-xl font-bold text-gray-900">물건 검색</h2>
-				<button
-					onClick={resetFilters}
-					className="text-xs text-gray-400 hover:text-gray-600"
-				>
-					필터 초기화
-				</button>
-			</div>
-
-			{/* Filters */}
-			<div className="bg-white rounded-lg shadow-sm p-4 mb-6">
-				<div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-					<select
-						className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-						value={filters.sido ?? ""}
-						onChange={(e) => setFilter("sido", e.target.value)}
-					>
-						<option value="">시/도 전체</option>
-						<option>서울</option>
-						<option>경기</option>
-						<option>인천</option>
-						<option>부산</option>
-						<option>대구</option>
-						<option>대전</option>
-						<option>광주</option>
-						<option>울산</option>
-						<option>강원</option>
-						<option>충북</option>
-						<option>충남</option>
-						<option>전북</option>
-						<option>전남</option>
-						<option>경북</option>
-						<option>경남</option>
-						<option>제주</option>
+		<div className="mx-auto max-w-6xl px-4 py-6">
+			{/* 필터 바 */}
+			<div className="bg-white rounded-lg shadow-sm p-4 mb-4">
+				<div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+					<select className="border rounded px-3 py-2 text-sm" value={filters.sido ?? ""}
+						onChange={(e) => setFilter("sido", e.target.value)}>
+						<option value="">지역 전체</option>
+						{["서울특별시","경기도","인천광역시","부산광역시","대구광역시","대전광역시","광주광역시","울산광역시"].map(s =>
+							<option key={s}>{s}</option>)}
 					</select>
-					<select
-						className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-						value={filters.type ?? ""}
-						onChange={(e) => setFilter("type", e.target.value)}
-					>
+					<select className="border rounded px-3 py-2 text-sm" value={filters.type ?? ""}
+						onChange={(e) => setFilter("type", e.target.value)}>
 						<option value="">물건종류 전체</option>
-						<option>아파트</option>
-						<option>빌라/연립</option>
-						<option>오피스텔</option>
-						<option>단독/다가구</option>
-						<option>상가</option>
-						<option>토지</option>
+						{["아파트","다세대(빌라)","오피스텔","단독주택","근린주택","상가","토지","공장"].map(s =>
+							<option key={s}>{s}</option>)}
 					</select>
-					<select
-						className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-						value={filters.status ?? ""}
-						onChange={(e) => setFilter("status", e.target.value)}
-					>
+					<select className="border rounded px-3 py-2 text-sm" value={filters.status ?? ""}
+						onChange={(e) => setFilter("status", e.target.value)}>
 						<option value="">상태 전체</option>
-						<option>신건</option>
-						<option>진행중</option>
-						<option>유찰</option>
-						<option>낙찰</option>
+						{["신건","유찰","재진행","매각","취하"].map(s =>
+							<option key={s}>{s}</option>)}
 					</select>
-					<select
-						className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-						value={filters.priceMax ?? ""}
-						onChange={(e) => setFilter("priceMax", e.target.value)}
-					>
-						<option value="">감정가 전체</option>
-						{PRICE_OPTIONS.filter((o) => o.value).map((o) => (
-							<option key={o.value} value={o.value}>
-								{o.label}
-							</option>
-						))}
-					</select>
-					<select
-						className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-						value={filters.failCount ?? ""}
-						onChange={(e) => setFilter("failCount", e.target.value)}
-					>
-						<option value="">유찰횟수</option>
-						<option value="1">1회 이상</option>
-						<option value="2">2회 이상</option>
-						<option value="3">3회 이상</option>
-						<option value="5">5회 이상</option>
-					</select>
-					<select
-						className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-						value={filters.sort ?? "sale_date"}
-						onChange={(e) => setFilter("sort", e.target.value)}
-					>
+					<select className="border rounded px-3 py-2 text-sm" value={filters.sort ?? "sale_date"}
+						onChange={(e) => setFilter("sort", e.target.value)}>
 						<option value="sale_date">매각기일순</option>
 						<option value="appraisal_price">감정가순</option>
 						<option value="min_bid_price">최저가순</option>
-						<option value="created_at">등록일순</option>
 					</select>
 				</div>
 			</div>
 
-			{/* Results */}
-			{isLoading ? (
-				<div className="text-center py-12 text-gray-400">로딩 중...</div>
-			) : !data || data.data.length === 0 ? (
-				<div className="text-center py-12 text-gray-400">
-					검색 결과가 없습니다
-				</div>
-			) : (
-				<>
-					<p className="text-sm text-gray-500 mb-3">
-						총 {data.pagination.total.toLocaleString()}건
+			{/* 결과 건수 */}
+			{data && (
+				<div className="flex items-center justify-between mb-3">
+					<p className="text-sm font-medium text-gray-700">
+						검색결과 : <span className="text-blue-600 font-bold">{data.pagination.total.toLocaleString()}</span> 건
 					</p>
-					<div className="space-y-3">
-						{data.data.map((item) => (
-							<Link
-								key={item.id}
-								to={`/items/${encodeURIComponent(item.case_no)}`}
-								className="block bg-white rounded-lg shadow-sm p-4 hover:shadow-md transition-shadow"
-							>
-								<div className="flex flex-col sm:flex-row sm:justify-between gap-2">
-									<div className="flex-1 min-w-0">
-										<div className="flex flex-wrap items-center gap-1.5 mb-1">
-											<span className="text-xs bg-blue-100 text-blue-700 px-2 py-0.5 rounded">
-												{item.item_type ?? "기타"}
-											</span>
-											<span className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
-												{item.status ?? "진행중"}
-											</span>
-											{item.fail_count != null && item.fail_count > 0 && (
-												<span className="text-xs bg-red-100 text-red-600 px-2 py-0.5 rounded">
-													유찰 {item.fail_count}회
-												</span>
-											)}
-										</div>
-										<p className="text-sm font-medium text-gray-900 truncate">
-											{item.address_full ?? item.case_no}
-										</p>
-										<p className="text-xs text-gray-400 mt-1">
-											{item.case_no} | {item.court_name}
-										</p>
-									</div>
-									<div className="flex sm:flex-col gap-4 sm:gap-0 sm:text-right shrink-0">
-										<div>
-											<p className="text-xs text-gray-400">감정가</p>
-											<p className="text-sm font-bold text-gray-900">
-												{formatPrice(item.appraisal_price)}
-											</p>
-										</div>
-										<div>
-											<p className="text-xs text-gray-400">최저가</p>
-											<p className="text-sm font-bold text-blue-600">
-												{formatPrice(item.min_bid_price)}
-											</p>
-										</div>
-									</div>
-								</div>
-								{item.sale_date && (
-									<p className="text-xs text-gray-400 mt-2">
-										매각기일: {item.sale_date} {item.sale_time ?? ""}
-									</p>
-								)}
-							</Link>
-						))}
-					</div>
+				</div>
+			)}
 
-					{/* Pagination */}
-					{data.pagination.totalPages > 1 && (
-						<Pagination
-							currentPage={currentPage}
-							totalPages={data.pagination.totalPages}
-							onPageChange={setPage}
-						/>
-					)}
-				</>
+			{/* 경매 목록 테이블 */}
+			{isLoading ? (
+				<div className="text-center py-20 text-gray-400">로딩 중...</div>
+			) : !data || data.data.length === 0 ? (
+				<div className="text-center py-20 text-gray-400">검색 결과가 없습니다</div>
+			) : (
+				<div className="bg-white rounded-lg shadow-sm overflow-hidden">
+					<table className="w-full text-sm">
+						<thead className="bg-gray-50 border-b">
+							<tr>
+								<th className="px-3 py-2 text-left w-24">사진</th>
+								<th className="px-3 py-2 text-left w-28">용도/사건</th>
+								<th className="px-3 py-2 text-left">소재지 / 면적 / 특수권리</th>
+								<th className="px-3 py-2 text-right w-32">감정/최저가</th>
+								<th className="px-3 py-2 text-center w-24">현재상태</th>
+								<th className="px-3 py-2 text-center w-24">매각기일</th>
+								<th className="px-3 py-2 text-center w-16">조회</th>
+							</tr>
+						</thead>
+						<tbody>
+							{data.data.map((item) => (
+								<ItemRow key={item.id} item={item} />
+							))}
+						</tbody>
+					</table>
+				</div>
+			)}
+
+			{/* 페이지네이션 */}
+			{data && data.pagination.totalPages > 1 && (
+				<div className="flex justify-center gap-1 mt-6">
+					{Array.from({ length: Math.min(data.pagination.totalPages, 10) }, (_, i) => i + 1).map((p) => (
+						<button key={p}
+							onClick={() => { const params = new URLSearchParams(searchParams); params.set("page", String(p)); setSearchParams(params); }}
+							className={`px-3 py-1 text-sm rounded ${p === data.pagination.page ? "bg-blue-600 text-white" : "bg-white border text-gray-600 hover:bg-gray-50"}`}>
+							{p}
+						</button>
+					))}
+				</div>
 			)}
 		</div>
 	);
 }
 
-function Pagination({
-	currentPage,
-	totalPages,
-	onPageChange,
-}: {
-	currentPage: number;
-	totalPages: number;
-	onPageChange: (page: number) => void;
-}) {
-	const pageWindow = 5;
-	const start = Math.max(1, currentPage - Math.floor(pageWindow / 2));
-	const end = Math.min(totalPages, start + pageWindow - 1);
-	const pages = Array.from({ length: end - start + 1 }, (_, i) => start + i);
+function ItemRow({ item }: { item: ReturnType<typeof api.getItems> extends Promise<infer R> ? R extends { data: (infer T)[] } ? T : never : never }) {
+	const dDay = item.sale_date ? getDday(item.sale_date) : null;
 
 	return (
-		<div className="flex justify-center items-center gap-1 mt-6">
-			<button
-				onClick={() => onPageChange(Math.max(1, currentPage - 1))}
-				disabled={currentPage === 1}
-				className="px-2 py-1 text-sm text-gray-500 disabled:opacity-30"
-			>
-				&lsaquo;
-			</button>
-			{start > 1 && (
-				<>
-					<button
-						onClick={() => onPageChange(1)}
-						className="px-3 py-1 text-sm rounded bg-white text-gray-600 border border-gray-300 hover:bg-gray-50"
-					>
-						1
-					</button>
-					{start > 2 && <span className="text-gray-400 text-sm">...</span>}
-				</>
-			)}
-			{pages.map((p) => (
-				<button
-					key={p}
-					onClick={() => onPageChange(p)}
-					className={`px-3 py-1 text-sm rounded ${
-						p === currentPage
-							? "bg-blue-600 text-white"
-							: "bg-white text-gray-600 border border-gray-300 hover:bg-gray-50"
-					}`}
-				>
-					{p}
-				</button>
-			))}
-			{end < totalPages && (
-				<>
-					{end < totalPages - 1 && (
-						<span className="text-gray-400 text-sm">...</span>
+		<tr className="border-b hover:bg-blue-50/30 transition-colors">
+			{/* 사진 */}
+			<td className="px-3 py-3">
+				<Link to={`/items/${encodeURIComponent(item.case_no)}`}>
+					{item.image_url ? (
+						<img src={item.image_url} alt="" className="w-20 h-16 object-cover rounded border" />
+					) : (
+						<div className="w-20 h-16 bg-gray-100 rounded border flex items-center justify-center text-gray-300 text-xs">No Image</div>
 					)}
-					<button
-						onClick={() => onPageChange(totalPages)}
-						className="px-3 py-1 text-sm rounded bg-white text-gray-600 border border-gray-300 hover:bg-gray-50"
-					>
-						{totalPages}
-					</button>
-				</>
-			)}
-			<button
-				onClick={() => onPageChange(Math.min(totalPages, currentPage + 1))}
-				disabled={currentPage === totalPages}
-				className="px-2 py-1 text-sm text-gray-500 disabled:opacity-30"
-			>
-				&rsaquo;
-			</button>
-		</div>
+				</Link>
+			</td>
+
+			{/* 용도/사건 */}
+			<td className="px-3 py-3">
+				<span className="inline-block bg-blue-100 text-blue-700 text-xs font-bold px-2 py-0.5 rounded mb-1">
+					{item.item_type ?? "기타"}
+				</span>
+				<br />
+				<span className="text-xs text-gray-500">{item.case_no}</span>
+				<br />
+				<span className="text-xs text-gray-400">{item.court_name}</span>
+			</td>
+
+			{/* 소재지 / 면적 / 특수권리 */}
+			<td className="px-3 py-3">
+				<Link to={`/items/${encodeURIComponent(item.case_no)}`} className="text-sm text-gray-900 hover:text-blue-600 hover:underline font-medium">
+					{item.address_full ?? "-"}
+				</Link>
+				<div className="mt-1 text-xs text-gray-500">
+					{item.building_area != null && <span>건물 <span className="text-pink-600 font-medium">{item.building_area}</span>평</span>}
+					{item.building_area != null && item.land_area != null && <span className="mx-2">|</span>}
+					{item.land_area != null && <span>토지 <span className="text-pink-600 font-medium">{item.land_area}</span>평</span>}
+				</div>
+				{item.special_rights && (
+					<div className="mt-1">
+						{item.special_rights.split(",").map((r, i) => (
+							<span key={i} className="inline-block bg-red-50 text-red-600 text-[10px] px-1.5 py-0.5 rounded mr-1">{r.trim()}</span>
+						))}
+					</div>
+				)}
+			</td>
+
+			{/* 감정/최저가 */}
+			<td className="px-3 py-3 text-right">
+				<div className="text-sm text-gray-900">{formatPrice(item.appraisal_price)}</div>
+				<div className="text-sm font-bold text-blue-600">{formatPrice(item.min_bid_price)}</div>
+				{item.winning_price != null && (
+					<div className="text-sm font-bold text-pink-600">{formatPrice(item.winning_price)}</div>
+				)}
+			</td>
+
+			{/* 현재상태 */}
+			<td className="px-3 py-3 text-center">
+				<StatusBadge status={item.status} />
+				{item.bid_rate != null && (
+					<div className="text-xs text-blue-600 mt-0.5">({item.bid_rate}%)</div>
+				)}
+			</td>
+
+			{/* 매각기일 */}
+			<td className="px-3 py-3 text-center">
+				<div className="text-xs text-gray-700">{item.sale_date ?? "-"}</div>
+				{dDay !== null && dDay >= 0 && (
+					<div className={`text-[10px] mt-0.5 font-medium ${dDay === 0 ? "text-pink-600" : dDay <= 7 ? "text-orange-500" : "text-gray-400"}`}>
+						{dDay === 0 ? "오늘입찰" : `입찰 ${dDay}일전`}
+					</div>
+				)}
+			</td>
+
+			{/* 조회수 */}
+			<td className="px-3 py-3 text-center text-xs text-gray-400">
+				{item.views ?? 0}
+			</td>
+		</tr>
 	);
+}
+
+function StatusBadge({ status }: { status?: string }) {
+	if (!status) return <span className="text-xs text-gray-400">-</span>;
+	let color = "bg-gray-100 text-gray-600";
+	if (status.includes("유찰")) color = "bg-orange-100 text-orange-700";
+	else if (status.includes("재진행")) color = "bg-yellow-100 text-yellow-700";
+	else if (status.includes("매각")) color = "bg-green-100 text-green-700";
+	else if (status.includes("신건")) color = "bg-blue-100 text-blue-700";
+	else if (status.includes("취하")) color = "bg-gray-100 text-gray-500";
+	return <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded ${color}`}>{status}</span>;
+}
+
+function getDday(dateStr: string): number | null {
+	try {
+		const target = new Date(dateStr);
+		const today = new Date();
+		today.setHours(0, 0, 0, 0);
+		target.setHours(0, 0, 0, 0);
+		return Math.ceil((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+	} catch {
+		return null;
+	}
 }
