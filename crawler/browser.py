@@ -1,19 +1,23 @@
-"""Playwright 브라우저 관리 + courtauction.go.kr API 호출
+"""Playwright 브라우저 관리 + courtauction.go.kr 스크래핑
 
 courtauction.go.kr은 WebSquare 프레임워크를 사용하며,
-검색은 내부 JavaScript를 통해 POST 요청으로 처리됩니다.
+검색 결과는 UI 조작 후 HTML 스크래핑으로 수집합니다.
 
-두 가지 접근법을 지원합니다:
-1. evaluate 방식: 브라우저 컨텍스트에서 fetch() 호출 (기본)
-2. scrape 방식: 실제 UI를 조작하여 검색 실행 (fallback)
+흐름:
+1. PGJ151F00 (물건상세검색) 페이지 접속
+2. 검색 조건 설정 (법원, 기간 등)
+3. 검색 버튼 클릭
+4. 결과 HTML 파싱
+5. 페이지 이동하며 반복
 """
-import json
 import time
-from playwright.sync_api import sync_playwright, Browser, Page, Frame
-from config import HEADLESS, CRAWL_DELAY, BASE_URL, SEARCH_API_URL, PAGE_SIZE
+from playwright.sync_api import sync_playwright, Browser, Page
+from config import HEADLESS, CRAWL_DELAY, BASE_URL
 from utils.logger import setup_logger
 
 logger = setup_logger("browser")
+
+SEARCH_PAGE = f"{BASE_URL}/pgj/index.on?w2xPath=/pgj/ui/pgj100/PGJ151F00.xml"
 
 
 class BrowserManager:
@@ -60,213 +64,107 @@ class BrowserManager:
         self.close()
 
 
-def init_session(page: Page) -> Frame | None:
-    """courtauction.go.kr 세션 초기화
-
-    Returns:
-        메인 iframe Frame 또는 None
-    """
-    logger.info("세션 초기화: courtauction.go.kr 접속 중...")
-    page.goto(
-        f"{BASE_URL}/pgj/index.on?w2xPath=/pgj/ui/pgj100/PGJ157M00.xml",
-        wait_until="networkidle",
-        timeout=30000,
-    )
-    # WebSquare 초기화 대기
-    page.wait_for_timeout(3000)
-
-    # iframe 확인
-    frame = page.frame("indexFrame")
-    if frame:
-        logger.info("indexFrame 발견 - iframe 기반 구조")
-    else:
-        logger.info("indexFrame 없음 - 단일 페이지 구조")
-
-    logger.info("세션 초기화 완료")
-    return frame
+def init_search_page(page: Page):
+    """물건상세검색 페이지 로드 및 초기화"""
+    logger.info("물건상세검색 페이지 접속 중...")
+    page.goto(SEARCH_PAGE, wait_until="networkidle", timeout=30000)
+    time.sleep(8)  # WebSquare 완전 초기화 대기
+    logger.info("페이지 로드 완료")
 
 
-def search_items_api(page: Page, params: dict, page_num: int = 1) -> dict:
-    """WebSquare 검색 API를 브라우저 컨텍스트에서 호출
-
-    Args:
-        page: Playwright Page (세션 쿠키 유지)
-        params: 검색 파라미터
-        page_num: 페이지 번호
-
-    Returns:
-        API 응답 dict (파싱된 JSON 또는 에러)
-    """
-    search_data = _build_search_payload(params, page_num)
-
+def set_court(page: Page, court_code: str):
+    """법원 선택"""
     try:
-        result = page.evaluate("""
-            async (payload) => {
-                try {
-                    const res = await fetch(payload.url, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json; charset=UTF-8',
-                            'Accept': 'application/json, text/xml, */*',
-                            'X-Requested-With': 'XMLHttpRequest',
-                        },
-                        body: JSON.stringify(payload.data),
-                    });
-                    const text = await res.text();
-                    return { status: res.status, body: text };
-                } catch (e) {
-                    return { status: 0, body: '', error: e.message };
-                }
-            }
-        """, {"url": SEARCH_API_URL, "data": search_data})
-
-        if result.get("error"):
-            return {"error": f"fetch 오류: {result['error']}"}
-
-        status = result.get("status", 0)
-        body = result.get("body", "")
-
-        if status != 200:
-            logger.warning(f"API 응답 상태: {status}")
-            return {"error": f"HTTP {status}", "raw": body[:300]}
-
-        # JSON 파싱 시도
-        try:
-            return json.loads(body)
-        except json.JSONDecodeError:
-            # WebSquare XML 응답일 수 있음
-            if body.strip().startswith("<"):
-                return _parse_xml_response(body)
-            return {"error": "응답 파싱 실패", "raw": body[:500]}
-
+        page.evaluate(f"""() => {{
+            var sbx = document.getElementById('mf_wfm_mainFrame_sbx_gdsDtlCortOfc');
+            if (sbx) {{
+                // WebSquare selectbox 값 설정
+                sbx.value = '{court_code}';
+                sbx.dispatchEvent(new Event('change', {{bubbles: true}}));
+            }}
+        }}""")
+        time.sleep(1)
     except Exception as e:
-        logger.error(f"search_items_api 예외: {e}")
-        return {"error": str(e)}
+        logger.warning(f"법원 선택 실패: {e}")
 
 
-def search_items_scrape(page: Page, frame: Frame | None, params: dict) -> str:
-    """UI 조작을 통한 검색 실행 (fallback 방식)
-
-    WebSquare API 직접 호출이 안 될 경우 사용합니다.
-    실제 검색 폼을 조작하여 결과를 가져옵니다.
-
-    Returns:
-        검색 결과 HTML
-    """
-    target = frame or page
-
+def click_search(page: Page):
+    """검색 버튼 클릭 및 결과 대기"""
     try:
-        # 법원/소재지 선택
-        search_type = params.get("search_type", "1")
-        if search_type == "1":
-            # 법원 기준 검색
-            court_code = params.get("court_code", "")
-            if court_code:
-                target.evaluate(f"""
-                    var sbx = WebSquare.getComponentById('sbx_dspslSchdGdsCortOfc');
-                    if (sbx) sbx.setValue('{court_code}');
-                """)
-                time.sleep(0.5)
-        else:
-            # 소재지 기준 검색
-            sido_code = params.get("sido_code", "")
-            if sido_code:
-                # 라디오 버튼 소재지 선택
-                target.evaluate("""
-                    var rad = WebSquare.getComponentById('rad_dspslSchdGdsSrchSt');
-                    if (rad) rad.setValue('2');
-                """)
-                time.sleep(0.5)
-                target.evaluate(f"""
-                    var sbx = WebSquare.getComponentById('sbx_dspslSchdGdsAdongSdS');
-                    if (sbx) sbx.setValue('{sido_code}');
-                """)
-                time.sleep(0.5)
-
-        # 검색 버튼 클릭
-        target.evaluate("""
-            var btn = WebSquare.getComponentById('btn_dspslSchdGdsSrch');
-            if (btn) btn.click();
-        """)
-
-        # 결과 로딩 대기
-        time.sleep(3)
-
-        # 결과 페이지의 HTML 가져오기
-        html = target.content()
-        return html
-
+        page.click("#mf_wfm_mainFrame_btn_gdsDtlSrch")
+        logger.info("검색 버튼 클릭")
+        time.sleep(8)  # 결과 로딩 대기
     except Exception as e:
-        logger.error(f"scrape 방식 검색 실패: {e}")
+        logger.error(f"검색 버튼 클릭 실패: {e}")
+
+
+def get_result_text(page: Page) -> str:
+    """검색 결과 텍스트 추출"""
+    try:
+        text = page.evaluate("""() => {
+            return document.body ? document.body.innerText : '';
+        }""")
+        return text
+    except Exception as e:
+        logger.error(f"결과 텍스트 추출 실패: {e}")
         return ""
 
 
-def _build_search_payload(params: dict, page_num: int) -> dict:
-    """WebSquare 검색 요청 페이로드 생성"""
-    return {
-        "dma_srchGdsDtlSrchInfo": {
-            "pgmId": "PGJ157M02",
-            "bidDvsCd": "",
-            "statNum": str(page_num),
-            "cortOfcCd": params.get("court_code", ""),
-            "jdbnCd": params.get("dept_code", ""),
-            "cortStDvs": params.get("search_type", "1"),
-            "csNo": "",
-            "aeeEvlAmtMin": params.get("price_min", ""),
-            "aeeEvlAmtMax": params.get("price_max", ""),
-            "rletLwsDspslPrcMin": params.get("bid_min", ""),
-            "rletLwsDspslPrcMax": params.get("bid_max", ""),
-            "rprsAdongSdCd": params.get("sido_code", ""),
-            "rprsAdongSggCd": params.get("sigu_code", ""),
-            "rprsAdongEmdCd": params.get("dong_code", ""),
-            "lclDspslGdsLstUsgCd": params.get("type_large", ""),
-            "mclDspslGdsLstUsgCd": params.get("type_medium", ""),
-            "sclDspslGdsLstUsgCd": params.get("type_small", ""),
-            "lwsDspslPrcRateMin": params.get("rate_min", ""),
-            "lwsDspslPrcRateMax": params.get("rate_max", ""),
-            "flbdNcntMin": params.get("fail_min", ""),
-            "flbdNcntMax": params.get("fail_max", ""),
-            "objctArDtsMin": "",
-            "objctArDtsMax": "",
-            "bidBgngYmd": params.get("date_from", ""),
-            "bidEndYmd": params.get("date_to", ""),
-            "pageSize": str(PAGE_SIZE),
-        }
-    }
-
-
-def _parse_xml_response(xml_text: str) -> dict:
-    """WebSquare XML 응답을 dict로 변환"""
+def get_result_html(page: Page) -> str:
+    """검색 결과 HTML 추출"""
     try:
-        from bs4 import BeautifulSoup
-        soup = BeautifulSoup(xml_text, "lxml-xml")
-
-        result = {}
-        # w2:dataList 추출
-        for data_list in soup.find_all("w2:dataList") or soup.find_all("dataList"):
-            list_id = data_list.get("id", "unknown")
-            rows = []
-            for row in data_list.find_all("w2:row") or data_list.find_all("row"):
-                row_data = {}
-                for col in row.find_all("w2:column") or row.find_all("column"):
-                    col_id = col.get("id", "")
-                    row_data[col_id] = col.get_text(strip=True)
-                rows.append(row_data)
-            result[list_id] = rows
-
-        # w2:dataMap 추출
-        for data_map in soup.find_all("w2:dataMap") or soup.find_all("dataMap"):
-            map_id = data_map.get("id", "unknown")
-            map_data = {}
-            for col in data_map.find_all("w2:column") or data_map.find_all("column"):
-                col_id = col.get("id", "")
-                map_data[col_id] = col.get_text(strip=True)
-            result[map_id] = map_data
-
-        return result
+        html = page.evaluate("""() => {
+            return document.body ? document.body.innerHTML : '';
+        }""")
+        return html
     except Exception as e:
-        logger.error(f"XML 파싱 오류: {e}")
-        return {"error": f"XML 파싱 실패: {e}", "raw": xml_text[:500]}
+        logger.error(f"결과 HTML 추출 실패: {e}")
+        return ""
+
+
+def get_total_count(text: str) -> int:
+    """결과 텍스트에서 총 건수 추출"""
+    import re
+    # "총 물건수201건" 또는 "총 201건" 패턴
+    match = re.search(r'총\s*(?:물건수)?\s*(\d[\d,]*)\s*건', text)
+    if match:
+        return int(match.group(1).replace(",", ""))
+    return 0
+
+
+def click_next_page(page: Page, page_num: int) -> bool:
+    """다음 페이지 클릭
+
+    Returns:
+        성공 여부
+    """
+    try:
+        # 페이지 번호 링크 클릭
+        clicked = page.evaluate(f"""() => {{
+            var links = document.querySelectorAll('a, span, button');
+            for (var link of links) {{
+                var text = link.innerText.trim();
+                if (text === '{page_num}') {{
+                    link.click();
+                    return true;
+                }}
+            }}
+            // 다음 버튼 찾기
+            var nextBtns = document.querySelectorAll('[id*=next], [id*=Next], [class*=next]');
+            for (var btn of nextBtns) {{
+                btn.click();
+                return true;
+            }}
+            return false;
+        }}""")
+
+        if clicked:
+            time.sleep(5)
+            return True
+        return False
+    except Exception as e:
+        logger.warning(f"페이지 {page_num} 이동 실패: {e}")
+        return False
 
 
 def wait_between_requests():
