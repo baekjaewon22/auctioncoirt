@@ -1,6 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
+import { useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useSearchParams, Link } from "react-router-dom";
 import { api, formatPrice } from "../lib/api";
+import { useAuth, authHeaders } from "../lib/auth";
 
 export default function SearchPage() {
 	const [searchParams, setSearchParams] = useSearchParams();
@@ -30,6 +32,9 @@ export default function SearchPage() {
 
 	return (
 		<div className="mx-auto max-w-6xl px-4 py-6">
+			{/* 마이옥션 관심물건 가져오기 */}
+			<CrawlBar />
+
 			{/* 필터 바 */}
 			<div className="bg-white rounded-lg shadow-sm p-4 mb-4">
 				<div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -203,6 +208,94 @@ function StatusBadge({ status }: { status?: string }) {
 	else if (status.includes("신건")) color = "bg-blue-100 text-blue-700";
 	else if (status.includes("취하")) color = "bg-gray-100 text-gray-500";
 	return <span className={`inline-block text-xs font-medium px-2 py-0.5 rounded ${color}`}>{status}</span>;
+}
+
+function CrawlBar() {
+	const { user } = useAuth();
+	const queryClient = useQueryClient();
+	const [crawling, setCrawling] = useState(false);
+	const [result, setResult] = useState<{ count: number; items: { case_no: string; item_type: string; address: string }[] } | null>(null);
+	const [error, setError] = useState("");
+
+	if (!user) return null;
+
+	const handleCrawl = async () => {
+		setCrawling(true);
+		setError("");
+		setResult(null);
+
+		// 사용자 설정에서 마이옥션 계정 가져오기
+		let myId = "";
+		let myPw = "";
+		try {
+			const res = await fetch("/api/settings", { headers: authHeaders() });
+			const d = await res.json() as { data?: Record<string, string> };
+			// 마스킹된 값이 올 수 있으므로 실제 값은 서버에서 처리
+			myId = d.data?.myauction_id || "";
+			myPw = d.data?.myauction_pw || "";
+		} catch {
+			// 무시
+		}
+
+		if (!myId) {
+			setError("설정 페이지에서 마이옥션 아이디/비밀번호를 먼저 저장해주세요");
+			setCrawling(false);
+			return;
+		}
+
+		try {
+			const res = await fetch("http://localhost:8787/api/crawl", {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({ myauction_id: myId, myauction_pw: myPw, user_id: user.id }),
+			});
+			const data = await res.json() as { data?: { count: number; items: { case_no: string; item_type: string; address: string }[] }; error?: string };
+			if (data.error) {
+				setError(data.error);
+			} else if (data.data) {
+				setResult(data.data);
+				queryClient.invalidateQueries({ queryKey: ["items"] });
+			}
+		} catch {
+			setError("크롤링 서버에 연결할 수 없습니다. 터미널에서 python crawler/server.py 를 실행해주세요.");
+		}
+		setCrawling(false);
+	};
+
+	return (
+		<div className="bg-white rounded-lg shadow-sm p-4 mb-4">
+			<div className="flex items-center justify-between flex-wrap gap-3">
+				<div>
+					<h3 className="text-sm font-bold text-gray-800">마이옥션 관심물건</h3>
+					<p className="text-xs text-gray-400">마이옥션에 등록한 관심물건을 가져옵니다</p>
+				</div>
+				<button onClick={handleCrawl} disabled={crawling}
+					className="bg-orange-500 text-white px-4 py-2 rounded-lg text-sm font-medium hover:bg-orange-600 disabled:opacity-50 transition-colors flex items-center gap-2 shrink-0">
+					{crawling ? (
+						<>
+							<svg className="animate-spin h-4 w-4" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+							가져오는 중...
+						</>
+					) : "관심물건 가져오기"}
+				</button>
+			</div>
+
+			{error && <p className="text-xs text-red-600 bg-red-50 p-2 rounded mt-3">{error}</p>}
+
+			{result && (
+				<div className="mt-3 bg-green-50 rounded p-3">
+					<p className="text-sm font-medium text-green-800">{result.count}건 가져오기 완료!</p>
+					<div className="mt-1 space-y-0.5">
+						{result.items.map((item, i) => (
+							<p key={i} className="text-xs text-green-700">
+								[{item.item_type}] {item.case_no} - {item.address.substring(0, 40)}
+							</p>
+						))}
+					</div>
+				</div>
+			)}
+		</div>
+	);
 }
 
 function getDday(dateStr: string): number | null {
